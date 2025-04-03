@@ -13,6 +13,12 @@
 #include <limits>
 #include <memory>
 
+#include "File_Z.h"
+
+using namespace std;
+
+using namespace TwoCli;
+
 // Forward declarations
 class Order;
 class Table;
@@ -27,6 +33,46 @@ std::string getCurrentDateTime() {
     strftime(buf, sizeof(buf), "%Y-%m-%d %X", &tstruct);
     return std::string(buf);
 }
+
+// class for additems to live moitor 
+//rik
+
+class KitchenOrder : public TwoCli::stbase {
+public:
+    int id;
+    int tableNumber;
+    std::string status;
+    std::string itemList;
+
+    // Required by stbase
+    std::string toString() const override {
+        return std::to_string(id) + "|" + std::to_string(tableNumber) + "|" + status + "|" + itemList;
+    }
+
+    // Required by FileManager
+    static KitchenOrder fromString(const std::string& line) {
+        KitchenOrder order;
+        std::stringstream ss(line);
+        std::string part;
+
+        getline(ss, part, '|');
+        order.id = std::stoi(part);
+
+        getline(ss, part, '|');
+        order.tableNumber = std::stoi(part);
+
+        getline(ss, part, '|');
+        order.status = part;
+
+        getline(ss, part, '|');
+        order.itemList = part;
+
+        return order;
+    }
+};
+
+
+//
 
 // Abstract base class for all users of the system
 class User {
@@ -92,12 +138,25 @@ public:
         : User(name, id, "Chef") {
     }
 
+    // old 
+    //void displayMenu() const override {
+    //    std::cout << "\n===== CHEF MENU =====\n";
+    //    std::cout << "1. View Pending Orders\n";
+    //    std::cout << "2. Update Order Status\n";
+    //    std::cout << "3. Return to Main Menu\n";
+    //}
+
+    //new 
     void displayMenu() const override {
         std::cout << "\n===== CHEF MENU =====\n";
         std::cout << "1. View Pending Orders\n";
         std::cout << "2. Update Order Status\n";
-        std::cout << "3. Return to Main Menu\n";
+        std::cout << "3. Live Order Monitor\n";  // New option
+        std::cout << "4. Return to Main Menu\n";
     }
+
+
+
 };
 
 // Derived class for managers
@@ -494,6 +553,46 @@ private:
     int nextOrderId;
     int nextReservationId;
 
+
+
+
+private:
+    // need to add a place to save the orderrs bro 
+
+    void saveOrdersToFile() {
+        // Save orders to a file for live monitoring
+        std::vector<KitchenOrder> kitchenOrders;
+
+        for (const auto& order : orders) {
+            if (order.getStatus() == OrderStatus::Pending ||
+                order.getStatus() == OrderStatus::InProgress) {
+
+                KitchenOrder ko;
+                ko.id = std::stoi(order.getOrderId().substr(1));
+                ko.tableNumber = order.getTableNumber();
+                ko.status = orderStatusToString(order.getStatus());
+
+                // Create a summary of items
+                std::string items;
+                for (const auto& item : order.getItems()) {
+                    items += item.getMenuItem()->getName() + " x" +
+                        std::to_string(item.getQuantity()) + ", ";
+                }
+                if (!items.empty()) {
+                    items.pop_back();
+                    items.pop_back();
+                }
+                ko.itemList = items;
+
+                kitchenOrders.push_back(ko);
+            }
+        }
+
+        // Use FileManager to save the kitchen orders
+        TwoCli::FileManager<KitchenOrder> orderManager("kitchen_orders.txt");
+        orderManager.writeRecords(kitchenOrders);
+    }
+
 public:
     RestaurantSystem(const std::string& name)
         : restaurantName(name), nextOrderId(1), nextReservationId(1) {
@@ -630,6 +729,24 @@ public:
         return false;
     }
 
+    //bool handleChefMenu(int choice) {
+    //    switch (choice) {
+    //    case 1:
+    //        viewPendingOrders();
+    //        break;
+    //    case 2:
+    //        updateOrderStatus();
+    //        break;
+    //    case 3:
+    //        return true; // Return to login
+    //    default:
+    //        std::cout << "Invalid choice. Please try again.\n";
+    //    }
+    //    return false;
+    //}
+
+    //new 
+
     bool handleChefMenu(int choice) {
         switch (choice) {
         case 1:
@@ -639,9 +756,12 @@ public:
             updateOrderStatus();
             break;
         case 3:
+            viewLiveOrders();  // Call the new live monitor function
+            break;
+        case 4:
             return true; // Return to login
         default:
-            std::cout << "Invalid choice. Please try again.\n";
+            cout << "Invalid choice. Please try again.\n";
         }
         return false;
     }
@@ -873,6 +993,8 @@ public:
             std::cout << "Order created successfully. Order ID: " << orderId << "\n";
             order.display();
         }
+
+        saveOrdersToFile();
     }
 
     void viewOrderStatus() {
@@ -1038,6 +1160,8 @@ public:
         else {
             std::cout << "Order not found or not updateable.\n";
         }
+        saveOrdersToFile();
+
     }
 
     void displayAllOrders() const {
@@ -1053,6 +1177,20 @@ public:
             std::cout << std::endl;
         }
     }
+    // new 
+
+
+    void viewLiveOrders() {
+        std::cout << "Starting live order monitoring from file..." << std::endl;
+
+        // Create a file manager for KitchenOrder
+        TwoCli::FileManager<KitchenOrder> orderManager("kitchen_orders.txt");
+
+        // Start the watch function
+        orderManager.watch(5); // Refresh every 5 seconds
+    }
+    //
+
 
     void manageMenu() {
         std::cout << "\n===== MENU MANAGEMENT =====\n";
